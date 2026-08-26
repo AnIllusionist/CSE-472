@@ -759,3 +759,379 @@ Submit:
 3. Which produced the shortest solution?
 4. Which heuristic performed better?
 5. Why heuristic information improves search efficiency.
+
+
+# 9. Complete Python Implementation
+
+```python
+from collections import deque
+import heapq
+import time
+
+INITIAL_STATE = (
+    1, 2, 3,
+    5, 6, 0,
+    4, 7, 8
+)
+
+GOAL_STATE = (
+    1, 2, 3,
+    4, 5, 6,
+    7, 8, 0
+)
+
+
+def print_state(state):
+    for i in range(0, 9, 3):
+        row = state[i:i + 3]
+        print(" ".join("_" if x == 0 else str(x) for x in row))
+    print()
+
+
+def get_neighbors(state):
+    """Return all valid next states and the move used."""
+    neighbors = []
+    zero = state.index(0)
+
+    row = zero // 3
+    col = zero % 3
+
+    moves = [
+        (-1, 0, "Up"),
+        (1, 0, "Down"),
+        (0, -1, "Left"),
+        (0, 1, "Right")
+    ]
+
+    for dr, dc, move_name in moves:
+        new_row = row + dr
+        new_col = col + dc
+
+        if 0 <= new_row < 3 and 0 <= new_col < 3:
+            new_index = new_row * 3 + new_col
+
+            new_state = list(state)
+            new_state[zero], new_state[new_index] = (
+                new_state[new_index],
+                new_state[zero]
+            )
+
+            neighbors.append((tuple(new_state), move_name))
+
+    return neighbors
+
+
+def misplaced_tiles(state, goal):
+    """Number of numbered tiles in the wrong position."""
+    return sum(
+        1 for current, target in zip(state, goal)
+        if current != 0 and current != target
+    )
+
+
+def manhattan_distance(state, goal):
+    """Sum of Manhattan distances of all numbered tiles."""
+    distance = 0
+
+    for tile in range(1, 9):
+        current_index = state.index(tile)
+        goal_index = goal.index(tile)
+
+        current_row, current_col = divmod(current_index, 3)
+        goal_row, goal_col = divmod(goal_index, 3)
+
+        distance += (
+            abs(current_row - goal_row)
+            + abs(current_col - goal_col)
+        )
+
+    return distance
+
+
+def count_inversions(state):
+    numbers = [x for x in state if x != 0]
+    return sum(
+        1
+        for i in range(len(numbers))
+        for j in range(i + 1, len(numbers))
+        if numbers[i] > numbers[j]
+    )
+
+
+def is_solvable(state):
+    """For a 3x3 puzzle, an even inversion count is solvable."""
+    return count_inversions(state) % 2 == 0
+
+
+def reconstruct_path(parent, goal):
+    path = []
+    current = goal
+
+    while current is not None:
+        path.append(current)
+        current = parent[current]
+
+    return path[::-1]
+
+
+def bfs(initial, goal):
+    """Breadth-First Search."""
+    start = time.perf_counter()
+
+    queue = deque([initial])
+    visited = {initial}
+    parent = {initial: None}
+    nodes_expanded = 0
+
+    while queue:
+        current = queue.popleft()
+        nodes_expanded += 1
+
+        if current == goal:
+            return (
+                reconstruct_path(parent, goal),
+                nodes_expanded,
+                time.perf_counter() - start
+            )
+
+        for neighbor, _ in get_neighbors(current):
+            if neighbor not in visited:
+                visited.add(neighbor)
+                parent[neighbor] = current
+                queue.append(neighbor)
+
+    return None, nodes_expanded, time.perf_counter() - start
+
+
+def hill_climbing(initial, goal, heuristic):
+    """Steepest-descent Hill Climbing using h(n)."""
+    start = time.perf_counter()
+
+    current = initial
+    path = [current]
+    visited = {current}
+    nodes_expanded = 0
+
+    while current != goal:
+        neighbors = [
+            (state, move)
+            for state, move in get_neighbors(current)
+            if state not in visited
+        ]
+
+        nodes_expanded += len(neighbors)
+
+        if not neighbors:
+            return None, nodes_expanded, time.perf_counter() - start
+
+        best_state, _ = min(
+            neighbors,
+            key=lambda item: heuristic(item[0], goal)
+        )
+
+        current_h = heuristic(current, goal)
+        best_h = heuristic(best_state, goal)
+
+        if best_h >= current_h:
+            # Local minimum / plateau
+            return None, nodes_expanded, time.perf_counter() - start
+
+        current = best_state
+        visited.add(current)
+        path.append(current)
+
+    return path, nodes_expanded, time.perf_counter() - start
+
+
+def a_star(initial, goal, heuristic):
+    """A* Search using f(n) = g(n) + h(n)."""
+    start = time.perf_counter()
+
+    # (f, g, tie_breaker, state)
+    priority_queue = []
+    counter = 0
+
+    h = heuristic(initial, goal)
+
+    heapq.heappush(
+        priority_queue,
+        (h, 0, counter, initial)
+    )
+
+    g_cost = {initial: 0}
+    parent = {initial: None}
+    closed = set()
+    nodes_expanded = 0
+
+    while priority_queue:
+        f, current_g, _, current = heapq.heappop(priority_queue)
+
+        if current in closed:
+            continue
+
+        closed.add(current)
+        nodes_expanded += 1
+
+        if current == goal:
+            return (
+                reconstruct_path(parent, goal),
+                nodes_expanded,
+                time.perf_counter() - start
+            )
+
+        for neighbor, _ in get_neighbors(current):
+            if neighbor in closed:
+                continue
+
+            new_g = current_g + 1
+
+            if neighbor not in g_cost or new_g < g_cost[neighbor]:
+                g_cost[neighbor] = new_g
+                h = heuristic(neighbor, goal)
+                f = new_g + h
+
+                counter += 1
+
+                heapq.heappush(
+                    priority_queue,
+                    (f, new_g, counter, neighbor)
+                )
+
+                parent[neighbor] = current
+
+    return None, nodes_expanded, time.perf_counter() - start
+
+
+def print_solution(path):
+    if path is None:
+        print("No solution found.")
+        return
+
+    for step, state in enumerate(path):
+        print(f"Step {step}:")
+        print_state(state)
+
+
+def run_algorithm(name, algorithm, initial, goal, heuristic=None):
+    print("\n" + "=" * 60)
+    print(name)
+    print("=" * 60)
+
+    if heuristic is None:
+        path, nodes, elapsed = algorithm(initial, goal)
+    else:
+        path, nodes, elapsed = algorithm(initial, goal, heuristic)
+
+    solved = path is not None
+
+    print("Solved:", "Yes" if solved else "No")
+    print("Nodes expanded:", nodes)
+    print(f"Execution time: {elapsed:.6f} seconds")
+
+    if solved:
+        print("Solution moves:", len(path) - 1)
+        print_solution(path)
+
+    return {
+        "algorithm": name,
+        "path": path,
+        "nodes": nodes,
+        "time": elapsed
+    }
+
+
+def main():
+    print("=" * 60)
+    print("AI-BASED 8-PUZZLE SOLVER")
+    print("=" * 60)
+
+    print("\nInitial state:")
+    print_state(INITIAL_STATE)
+
+    print("Goal state:")
+    print_state(GOAL_STATE)
+
+    if not is_solvable(INITIAL_STATE):
+        print("The puzzle is NOT solvable.")
+        return
+
+    print("The puzzle is solvable.")
+
+    print("\nInitial heuristic values:")
+    print("Misplaced Tiles:",
+          misplaced_tiles(INITIAL_STATE, GOAL_STATE))
+    print("Manhattan Distance:",
+          manhattan_distance(INITIAL_STATE, GOAL_STATE))
+
+    results = []
+
+    results.append(
+        run_algorithm(
+            "BFS",
+            bfs,
+            INITIAL_STATE,
+            GOAL_STATE
+        )
+    )
+
+    results.append(
+        run_algorithm(
+            "Hill Climbing + Misplaced Tiles",
+            hill_climbing,
+            INITIAL_STATE,
+            GOAL_STATE,
+            misplaced_tiles
+        )
+    )
+
+    results.append(
+        run_algorithm(
+            "A* + Misplaced Tiles",
+            a_star,
+            INITIAL_STATE,
+            GOAL_STATE,
+            misplaced_tiles
+        )
+    )
+
+    results.append(
+        run_algorithm(
+            "A* + Manhattan Distance",
+            a_star,
+            INITIAL_STATE,
+            GOAL_STATE,
+            manhattan_distance
+        )
+    )
+
+    print("\n" + "=" * 85)
+    print("PERFORMANCE COMPARISON")
+    print("=" * 85)
+
+    print(
+        f"{'Algorithm':<35}"
+        f"{'Moves':<10}"
+        f"{'Nodes':<12}"
+        f"{'Time(s)':<12}"
+        f"{'Solved':<8}"
+    )
+
+    print("-" * 85)
+
+    for result in results:
+        path = result["path"]
+        moves = len(path) - 1 if path else "-"
+        solved = "Yes" if path else "No"
+
+        print(
+            f"{result['algorithm']:<35}"
+            f"{str(moves):<10}"
+            f"{result['nodes']:<12}"
+            f"{result['time']:<12.6f}"
+            f"{solved:<8}"
+        )
+
+
+if __name__ == "__main__":
+    main()
+```
